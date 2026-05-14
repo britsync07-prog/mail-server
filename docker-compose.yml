@@ -1,0 +1,121 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mail_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mail_password}
+      POSTGRES_DB: ${POSTGRES_DB:-mail_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - mailnet
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    restart: unless-stopped
+    networks:
+      - mailnet
+
+  minio:
+    image: minio/minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio_admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio_password}
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+    restart: unless-stopped
+    networks:
+      - mailnet
+
+  # Placeholder for Postfix (using a popular image for simplicity in compose, needs custom config for production)
+  postfix:
+    image: boky/postfix
+    environment:
+      ALLOWED_SENDER_DOMAINS: example.com
+    ports:
+      - "25:25"
+      - "587:587"
+    restart: unless-stopped
+    networks:
+      - mailnet
+
+  # Placeholder for Dovecot
+  dovecot:
+    image: dovecot/dovecot
+    ports:
+      - "143:143"
+      - "993:993"
+    restart: unless-stopped
+    networks:
+      - mailnet
+
+  rspamd:
+    image: rspamd/rspamd
+    ports:
+      - "11333:11333"
+      - "11334:11334"
+    restart: unless-stopped
+    networks:
+      - mailnet
+
+  prometheus:
+    image: prom/prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
+    restart: unless-stopped
+    networks:
+      - mailnet
+
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+    restart: unless-stopped
+    networks:
+      - mailnet
+
+  backend:
+    build: ./backend
+    ports:
+      - "3001:3001"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://mail_user:mail_password@db:5432/mail_db}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+    depends_on:
+      - db
+      - redis
+    networks:
+      - mailnet
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "80:3000"
+    networks:
+      - mailnet
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:
+
+networks:
+  mailnet:
+    driver: bridge

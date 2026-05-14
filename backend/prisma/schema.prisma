@@ -1,0 +1,220 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id             String         @id @default(uuid())
+  email          String         @unique
+  passwordHash   String
+  name           String?
+  twoFactorEnabled Boolean      @default(false)
+  twoFactorSecret  String?
+  role           UserRole       @default(USER)
+  organizations  OrganizationUser[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  auditLogs      AuditLog[]
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  OPERATOR
+  USER
+}
+
+model Organization {
+  id          String             @id @default(uuid())
+  name        String
+  users       OrganizationUser[]
+  domains     Domain[]
+  mailboxes   Mailbox[]
+  apiKeys     ApiKey[]
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+}
+
+model OrganizationUser {
+  id             String       @id @default(uuid())
+  user           User         @relation(fields: [userId], references: [id])
+  userId         String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  organizationId String
+  role           UserRole     @default(USER)
+
+  @@unique([userId, organizationId])
+}
+
+model Domain {
+  id               String       @id @default(uuid())
+  name             String       @unique
+  organization     Organization @relation(fields: [organizationId], references: [id])
+  organizationId   String
+  verified         Boolean      @default(false)
+  dkimPrivateKey   String?
+  dkimPublicKey    String?
+  dkimSelector     String?      @default("mail")
+  spfVerified      Boolean      @default(false)
+  dmarcVerified    Boolean      @default(false)
+  mxVerified       Boolean      @default(false)
+  trackingEnabled  Boolean      @default(true)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  smtpCredentials  SmtpCredential[]
+  suppressions     Suppression[]
+  webhooks         Webhook[]
+  warmingPlans     WarmingPlan?
+}
+
+model Mailbox {
+  id               String       @id @default(uuid())
+  emailAddress     String       @unique
+  passwordHash     String
+  organization     Organization @relation(fields: [organizationId], references: [id])
+  organizationId   String
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+}
+
+model SmtpCredential {
+  id          String   @id @default(uuid())
+  username    String   @unique
+  password    String   // Hashed ideally
+  domain      Domain   @relation(fields: [domainId], references: [id])
+  domainId    String
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Email {
+  id               String       @id @default(uuid())
+  messageId        String       @unique // SMTP Message-ID
+  subject          String?
+  sender           String
+  recipients       Recipient[]
+  status           EmailStatus  @default(QUEUED)
+  queuedAt         DateTime     @default(now())
+  sentAt           DateTime?
+  trackingEnabled  Boolean      @default(true)
+  trackingEvents   TrackingEvent[]
+}
+
+enum EmailStatus {
+  QUEUED
+  SENDING
+  SENT
+  BOUNCED
+  FAILED
+}
+
+model Recipient {
+  id               String       @id @default(uuid())
+  emailAddress     String
+  email            Email        @relation(fields: [emailId], references: [id])
+  emailId          String
+  type             RecipientType @default(TO)
+}
+
+enum RecipientType {
+  TO
+  CC
+  BCC
+}
+
+model TrackingEvent {
+  id          String   @id @default(uuid())
+  email       Email    @relation(fields: [emailId], references: [id])
+  emailId     String
+  eventType   TrackingEventType
+  url         String?  // For clicks
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+}
+
+enum TrackingEventType {
+  OPEN
+  CLICK
+  UNSUBSCRIBE
+}
+
+model Suppression {
+  id          String   @id @default(uuid())
+  emailAddress String
+  domain      Domain?  @relation(fields: [domainId], references: [id])
+  domainId    String?  // Null means global
+  reason      String
+  type        SuppressionType
+  createdAt   DateTime @default(now())
+}
+
+enum SuppressionType {
+  BOUNCE
+  COMPLAINT
+  MANUAL
+}
+
+model IpPool {
+  id          String   @id @default(uuid())
+  name        String
+  ips         String[]
+  createdAt   DateTime @default(now())
+}
+
+model WarmingPlan {
+  id                String   @id @default(uuid())
+  domain            Domain   @relation(fields: [domainId], references: [id])
+  domainId          String   @unique
+  currentDay        Int      @default(1)
+  dailyLimit        Int      @default(50)
+  targetDailyLimit  Int
+  active            Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model Webhook {
+  id          String   @id @default(uuid())
+  url         String
+  events      WebhookEventType[]
+  domain      Domain   @relation(fields: [domainId], references: [id])
+  domainId    String
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+enum WebhookEventType {
+  DELIVERED
+  BOUNCED
+  OPENED
+  CLICKED
+  COMPLAINED
+  UNSUBSCRIBED
+  RECEIVED
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  user        User?    @relation(fields: [userId], references: [id])
+  userId      String?
+  action      String
+  details     String?
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+}
+
+model ApiKey {
+  id             String       @id @default(uuid())
+  key            String       @unique
+  name           String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  organizationId String
+  createdAt      DateTime     @default(now())
+  lastUsedAt     DateTime?
+}
